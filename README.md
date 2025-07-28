@@ -68,12 +68,19 @@ All three models:
 - Have reasonable memory footprint (~127MB) for container deployment
 - Represent the top performers when optimized for retrieval use cases
 
+
+### Manual Usage
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Fetch latest MTEB data (saves timestamped CSV)
+python3 analyze_mteb_csv.py hugging_face_stats_2025_07_25.csv
+```
+
 ## Next Steps
 
 1. Performance testing with representative documents from target domain
 2. Latency benchmarking for query embedding generation
 3. Final model selection based on domain-specific evaluation results
-
----
-
-*Analysis based on HuggingFace MTEB benchmark data, filtered for sub-100M parameter models*
+4. **Periodic model updates**: Download a new `hugging_face_stats` csv and run `analyze_mteb_csv.py` on it
