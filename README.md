@@ -68,15 +68,50 @@ All three models:
 - Have reasonable memory footprint (~127MB) for container deployment
 - Represent the top performers when optimized for retrieval use cases
 
+## Data Source Strategy
 
-### Manual Usage
+### Initial Approach: MTEB Library (Not Recommended)
+
+We initially attempted to use the official MTEB Python library to fetch live benchmark data:
+
+```bash
+python3 fetch_with_mteb_lib.py  # Available for reference
+```
+
+**Problems Discovered:**
+1. **Ranking Discrepancies**: Models ranked differently in raw MTEB data vs. official HuggingFace leaderboard
+2. **Evaluation Bias**: Newer models evaluated on fewer tasks appeared to score higher due to selection bias
+3. **Data Quality Issues**: Raw MTEB data includes experimental/unvalidated evaluations not shown on official leaderboard
+4. **Performance**: Loading complete MTEB database is slow and resource-intensive
+
+**Example Issue**: `prdev/mini-gte` showed high scores in raw MTEB data but appears with empty scores on the [official leaderboard](https://huggingface.co/spaces/mteb/leaderboard), indicating the raw data contains unvalidated results.
+
+### Recommended Approach: Manual CSV Download
+
+The **HuggingFace MTEB leaderboard** uses curated, validated evaluation results. For reliable model selection:
+
+#### Steps:
+1. **Download CSV**: Visit [https://huggingface.co/spaces/mteb/leaderboard](https://huggingface.co/spaces/mteb/leaderboard)
+2. **Apply Filters**: Set "Number of Parameters" to <100M 
+3. **Export Data**: Click "Download CSV" button
+4. **Save File**: Place CSV in directory `/stats` and rename to ex: `hugging_face_stats_2025_07_28.csv` with the date of the download.
+
+#### Analysis:
 ```bash
 # Install dependencies
 pip install -r requirements.txt
 
-# Fetch latest MTEB data (saves timestamped CSV)
-python3 analyze_mteb_csv.py hugging_face_stats_2025_07_25.csv
+# Analyze downloaded CSV
+python3 analyze_mteb_csv.py mteb_data.csv
 ```
+
+### Why This Approach Works Better
+
+- ✅ **Validated Data**: Only includes approved evaluation results
+- ✅ **Consistent Rankings**: Matches official leaderboard
+- ✅ **Quality Control**: HuggingFace team filters out problematic evaluations
+- ✅ **Performance**: Fast analysis without downloading entire MTEB database
+- ✅ **Reliability**: Trusted source for production model selection
 
 ## Next Steps
 
