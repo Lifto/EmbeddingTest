@@ -120,24 +120,36 @@ def main():
                 print(f"   - {model}")
         
         if available_models:
-            # DataFrame already contains only our filtered models!
-            print(f"\n📋 RESULTS DATAFRAME:")
-            print(f"Shape: {results_df.shape} (tasks x models)")
-            print(f"Models: {list(results_df.columns)}")
-            print(f"Tasks (first 10): {list(results_df.index[:10])}")
-            
-            print(f"\n🔍 RAW DATAFRAME DATA:")
-            print("=" * 100)
-            print(results_df)
-            print("=" * 100)
-            
-            # Show some sample data
-            print(f"\n📋 SAMPLE SCORES:")
-            for model in available_models[:3]:  # Show first 3 models
-                print(f"\n{model}:")
-                model_scores = results_df[model].dropna()
-                for task, score in model_scores.head(10).items():
-                    print(f"   {task}: {score}")
+            # Fix DataFrame structure - use task_name column as index
+            if 'task_name' in results_df.columns:
+                print(f"\n🔧 Restructuring DataFrame - using task_name as index...")
+                
+                # Set task_name as index and drop the task_name column
+                results_df = results_df.set_index('task_name')
+                
+                # Update available_models to exclude 'task_name'
+                available_models = [col for col in results_df.columns]
+                
+                print(f"\n📋 CORRECTED RESULTS DATAFRAME:")
+                print(f"Shape: {results_df.shape} (tasks x models)")
+                print(f"Models ({len(available_models)}): {available_models}")
+                print(f"Tasks (first 10): {list(results_df.index[:10])}")
+                
+                print(f"\n🔍 RAW DATAFRAME DATA:")
+                print("=" * 100)
+                print(results_df)
+                print("=" * 100)
+                
+                # Show some sample data
+                print(f"\n📋 SAMPLE SCORES:")
+                for model in available_models[:3]:  # Show first 3 models
+                    print(f"\n{model}:")
+                    model_scores = results_df[model].dropna()
+                    for task_name, score in model_scores.head(10).items():
+                        print(f"   {task_name}: {score}")
+            else:
+                print(f"\n⚠️  No 'task_name' column found - DataFrame structure may be different")
+                print(f"Available columns: {list(results_df.columns)}")
         else:
             print("\n❌ No acceptable models found in results DataFrame!")
 
