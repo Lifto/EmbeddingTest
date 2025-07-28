@@ -16,7 +16,7 @@ USAGE:
     
     Arguments:
         csv_file: Path to MTEB CSV file (default: looks for 'mteb_data.csv')
-        --scrape-licenses: Scrape licenses for top models until 3 redistributable found (optimized for speed)
+        --scrape-licenses: Scrape licenses and language info for top models until 3 redistributable found (optimized for speed)
 """
 
 import pandas as pd
@@ -81,15 +81,15 @@ def extract_model_url(model_str: str) -> Optional[str]:
     match = re.search(r'\]\((https://huggingface\.co/[^)]+)\)', str(model_str))
     return match.group(1) if match else None
 
-def scrape_license_from_hf(url: str) -> Optional[str]:
-    """Scrape license information from HuggingFace model page"""
+def scrape_model_info_from_hf(url: str) -> Dict[str, Optional[str]]:
+    """Scrape license and language information from HuggingFace model page"""
     
     # Check cache first
     if url in LICENSE_CACHE:
         return LICENSE_CACHE[url]
     
     try:
-        logger.info(f"Scraping license from: {url}")
+        logger.info(f"Scraping model info from: {url}")
         
         # Add headers to appear as a regular browser
         headers = {
@@ -99,8 +99,11 @@ def scrape_license_from_hf(url: str) -> Optional[str]:
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         
-        # Look for license in the HTML content
+        # Look for information in the HTML content
         html_content = response.text.lower()
+        
+        # Initialize result
+        result = {'license': None, 'languages': None}
         
         # Common license patterns found on HuggingFace pages
         license_patterns = {
@@ -116,33 +119,81 @@ def scrape_license_from_hf(url: str) -> Optional[str]:
         for license_type, patterns in license_patterns.items():
             for pattern in patterns:
                 if pattern in html_content:
-                    LICENSE_CACHE[url] = license_type
+                    result['license'] = license_type
                     logger.info(f"Found license: {license_type}")
-                    time.sleep(1)  # Be respectful to HuggingFace servers
-                    return license_type
+                    break
+            if result['license']:
+                break
         
         # If no specific license found, try to find generic license mentions
-        if 'license' in html_content:
-            LICENSE_CACHE[url] = 'unknown'
+        if not result['license'] and 'license' in html_content:
+            result['license'] = 'unknown'
             logger.warning(f"License mentioned but not recognized for {url}")
-            time.sleep(1)
-            return 'unknown'
         
-        LICENSE_CACHE[url] = None
-        logger.warning(f"No license information found for {url}")
-        time.sleep(1)
-        return None
+        # Language detection patterns
+        language_patterns = {
+            'english': ['english', 'en', 'english texts', 'english only', 'works for english'],
+            'multilingual': ['multilingual', 'multiple languages', 'multi-lingual', 'many languages'],
+            'chinese': ['chinese', 'zh', 'mandarin', 'simplified chinese', 'traditional chinese'],
+            'spanish': ['spanish', 'es', 'español'],
+            'french': ['french', 'fr', 'français'],
+            'german': ['german', 'de', 'deutsch'],
+            'japanese': ['japanese', 'ja', '日本語'],
+            'korean': ['korean', 'ko', '한국어'],
+            'arabic': ['arabic', 'ar', 'العربية'],
+            'russian': ['russian', 'ru', 'русский'],
+            'portuguese': ['portuguese', 'pt', 'português'],
+            'italian': ['italian', 'it', 'italiano'],
+        }
+        
+        # Search for language mentions
+        detected_languages = []
+        for lang, patterns in language_patterns.items():
+            for pattern in patterns:
+                if pattern in html_content:
+                    detected_languages.append(lang)
+                    break
+        
+        # Special checks for common phrases
+        if 'this model only works for english' in html_content:
+            detected_languages = ['english-only']
+        elif 'english texts' in html_content and 'only' in html_content:
+            detected_languages = ['english-only']
+        elif len(detected_languages) > 3:  # If too many languages detected, likely multilingual
+            detected_languages = ['multilingual']
+        
+        if detected_languages:
+            result['languages'] = ', '.join(detected_languages)
+            logger.info(f"Found languages: {result['languages']}")
+        else:
+            # Try to infer from model tags or description
+            if 'bert' in html_content and 'english' not in html_content:
+                result['languages'] = 'likely-english'
+            else:
+                result['languages'] = 'unknown'
+            logger.warning(f"No clear language information found for {url}")
+        
+        LICENSE_CACHE[url] = result
+        time.sleep(1)  # Be respectful to HuggingFace servers
+        return result
         
     except requests.RequestException as e:
         logger.error(f"Error scraping {url}: {e}")
-        LICENSE_CACHE[url] = None
+        error_result = {'license': None, 'languages': None}
+        LICENSE_CACHE[url] = error_result
         time.sleep(2)  # Wait longer after errors
-        return None
+        return error_result
     except Exception as e:
         logger.error(f"Unexpected error scraping {url}: {e}")
-        LICENSE_CACHE[url] = None
+        error_result = {'license': None, 'languages': None}
+        LICENSE_CACHE[url] = error_result
         time.sleep(2)
-        return None
+        return error_result
+
+def scrape_license_from_hf(url: str) -> Optional[str]:
+    """Backward compatibility wrapper for license scraping"""
+    info = scrape_model_info_from_hf(url)
+    return info.get('license')
 
 def get_scraped_license_status(model_str: str, fallback_license: str = None) -> str:
     """Get license status by scraping HuggingFace page, with fallback"""
@@ -207,7 +258,7 @@ def analyze_mteb_data(csv_file: str, scrape_licenses: bool = False) -> pd.DataFr
         logger.warning("No license column found in CSV - license analysis will be limited")
         logger.info("Use --scrape-licenses flag to fetch license info from HuggingFace pages")
     elif scrape_licenses:
-        logger.info("🔍 License scraping enabled - will scrape top models until 3 redistributable licenses found")
+        logger.info("🔍 License & language scraping enabled - will scrape top models until 3 redistributable licenses found")
         logger.info("⚡ This optimized approach will be much faster!")
     
     # First pass: Process all models without license scraping
@@ -258,6 +309,7 @@ def analyze_mteb_data(csv_file: str, scrape_licenses: bool = False) -> pd.DataFr
             'License': row.get('License', 'Unknown'),
             'License_Status': 'Pending' if scrape_licenses else get_license_status(row.get('License')),
             'License_Source': 'CSV Data',
+            'Languages': 'Pending' if scrape_licenses else 'Unknown',  # Will be updated if scraping
             
             # Performance scores
             'RAG_Score': rag_score,
@@ -294,14 +346,17 @@ def analyze_mteb_data(csv_file: str, scrape_licenses: bool = False) -> pd.DataFr
             model_name = result_df.loc[idx, 'Model']
             models_checked += 1
             
-            print(f"🔍 [{models_checked}] Scraping license for {model_name}...")
+            print(f"🔍 [{models_checked}] Scraping license & language for {model_name}...")
             
-            # Extract URL and scrape license
+            # Extract URL and scrape model info (license + language)
             url = extract_model_url(model_name)
             if url:
-                scraped_license = scrape_license_from_hf(url)
+                model_info = scrape_model_info_from_hf(url)
+                scraped_license = model_info.get('license')
+                scraped_languages = model_info.get('languages')
+                
                 if scraped_license:
-                    # Update both the license value and status
+                    # Update license information
                     result_df.loc[idx, 'License'] = scraped_license
                     result_df.loc[idx, 'License_Status'] = get_license_status(scraped_license)
                     result_df.loc[idx, 'License_Source'] = 'Scraped from HF'
@@ -310,11 +365,18 @@ def analyze_mteb_data(csv_file: str, scrape_licenses: bool = False) -> pd.DataFr
                     original_license = result_df.loc[idx, 'License']
                     result_df.loc[idx, 'License_Status'] = get_license_status(original_license)
                     result_df.loc[idx, 'License_Source'] = 'CSV Data (scrape failed)'
+                
+                # Update language information
+                if scraped_languages:
+                    result_df.loc[idx, 'Languages'] = scraped_languages
+                else:
+                    result_df.loc[idx, 'Languages'] = 'Unknown'
             else:
-                # No URL found, use original license
+                # No URL found, use original license and unknown languages
                 original_license = result_df.loc[idx, 'License']
                 result_df.loc[idx, 'License_Status'] = get_license_status(original_license)
                 result_df.loc[idx, 'License_Source'] = 'CSV Data (no URL)'
+                result_df.loc[idx, 'Languages'] = 'Unknown'
             
             # Check if this is redistributable
             current_license_status = result_df.loc[idx, 'License_Status']
@@ -327,8 +389,10 @@ def analyze_mteb_data(csv_file: str, scrape_licenses: bool = False) -> pd.DataFr
         for idx in range(models_checked, len(result_df)):
             if result_df.loc[idx, 'License_Status'] == 'Pending':
                 result_df.loc[idx, 'License_Status'] = get_license_status(result_df.loc[idx, 'License'])
+            if result_df.loc[idx, 'Languages'] == 'Pending':
+                result_df.loc[idx, 'Languages'] = 'Unknown'
         
-        logger.info(f"📈 License scraping summary: Checked {models_checked} models, found {redistributable_found} redistributable")
+        logger.info(f"📈 Scraping summary: Checked {models_checked} models, found {redistributable_found} redistributable")
     
     return result_df
 
@@ -356,14 +420,14 @@ def generate_report(df: pd.DataFrame):
     
     # Top performers
     print(f"\n🏆 TOP 10 MODELS BY RAG SCORE:")
-    display_cols = ['Model', 'RAG_Score', 'Retrieval', 'STS', 'License_Status', 'License_Source', 'Memory_MB']
+    display_cols = ['Model', 'RAG_Score', 'Retrieval', 'STS', 'License_Status', 'Languages', 'Memory_MB']
     print(df[display_cols].head(10).to_string(index=False))
     
     # Check if we have license info
     approved_df = df[df['License_Status'] == '✅ Approved']
     if not approved_df.empty:
         print(f"\n✅ TOP 5 APPROVED LICENSE MODELS:")
-        approved_display_cols = ['Model', 'RAG_Score', 'License', 'License_Source', 'Memory_MB']
+        approved_display_cols = ['Model', 'RAG_Score', 'License', 'Languages', 'Memory_MB']
         print(approved_df[approved_display_cols].head(5).to_string(index=False))
         
         # Our recommendations
@@ -374,6 +438,7 @@ def generate_report(df: pd.DataFrame):
             print(f"   • RAG Score: {model['RAG_Score']} (Retrieval: {model['Retrieval']:.1f}, STS: {model['STS']:.1f})")
             print(f"   • Resources: {model['Memory_MB']}MB RAM, {model['Max_Tokens']} token context")
             print(f"   • License: {model['License']} ✅")
+            print(f"   • Languages: {model['Languages']}")
             
             # Comparison to our original recommendations
             if model['Model'] in ['intfloat/e5-small-v2', 'intfloat/e5-small', 'BAAI/bge-small-en-v1.5']:
@@ -388,6 +453,7 @@ def generate_report(df: pd.DataFrame):
                 print(f"   • RAG Score: {model['RAG_Score']} (Retrieval: {model['Retrieval']:.1f}, STS: {model['STS']:.1f})")
                 print(f"   • Resources: {model['Memory_MB']}MB RAM, {model['Max_Tokens']} token context")
                 print(f"   • ⚠️  License: Verify manually at model's HuggingFace page")
+                print(f"   • Languages: {model['Languages']}")
                 
                 # Comparison to our original recommendations
                 if any(orig in model['Model'] for orig in ['e5-small-v2', 'e5-small', 'bge-small-en-v1.5']):

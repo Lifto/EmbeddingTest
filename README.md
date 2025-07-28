@@ -118,9 +118,9 @@ The script includes two modes for license analysis:
 
 **Enhanced Mode** (`--scrape-licenses` flag): Smart scraping for top models until 3 redistributable licenses found
 - ✅ **Fast & Smart**: Only scrapes top performers until finding 3 redistributable options
-- ✅ **Accurate**: Gets current license information directly from source
+- ✅ **Comprehensive**: Gets current license AND language information directly from source
 - ✅ **Optimized**: Stops early rather than scraping all models
-- 📊 **Transparent**: Shows "License_Source" column indicating data origin
+- 📊 **Transparent**: Shows "License_Source" and "Languages" columns indicating data origin
 
 ### Why This Approach Works Better
 
