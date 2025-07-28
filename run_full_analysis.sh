@@ -28,22 +28,60 @@ source .venv/bin/activate
 echo "📋 Installing dependencies..."
 pip install -r requirements.txt
 
+# Find the most recent CSV file
+find_most_recent_csv() {
+    local most_recent=""
+    local latest_date=""
+    
+    # Look for dated HuggingFace CSV files in stats directory
+    if [ -d "stats" ]; then
+        for file in stats/hugging_face_stats_????_??_??.csv; do
+            if [ -f "$file" ]; then
+                # Extract date from filename (format: hugging_face_stats_YYYY_MM_DD.csv)
+                filename=$(basename "$file")
+                if [[ $filename =~ hugging_face_stats_([0-9]{4})_([0-9]{2})_([0-9]{2})\.csv ]]; then
+                    year=${BASH_REMATCH[1]}
+                    month=${BASH_REMATCH[2]}
+                    day=${BASH_REMATCH[3]}
+                    
+                    # Create sortable date string YYYYMMDD
+                    file_date="${year}${month}${day}"
+                    
+                    # Compare with current latest
+                    if [[ -z "$latest_date" || "$file_date" > "$latest_date" ]]; then
+                        latest_date="$file_date"
+                        most_recent="$file"
+                    fi
+                fi
+            fi
+        done
+    fi
+    
+    echo "$most_recent"
+}
+
 # Check for CSV file
 CSV_FILE=""
-if [ -f "stats/hugging_face_stats_2025_07_28.csv" ]; then
-    CSV_FILE="stats/hugging_face_stats_2025_07_28.csv"
-elif [ -f "stats/hugging_face_stats_2025_07_25.csv" ]; then
-    CSV_FILE="stats/hugging_face_stats_2025_07_25.csv"
+
+# First, try to find the most recent dated CSV file
+RECENT_CSV=$(find_most_recent_csv)
+if [ -n "$RECENT_CSV" ]; then
+    CSV_FILE="$RECENT_CSV"
+    echo "📊 Found most recent CSV file: $CSV_FILE"
+# Fallback to generic name
 elif [ -f "mteb_data.csv" ]; then
     CSV_FILE="mteb_data.csv"
+    echo "📊 Found CSV file: $CSV_FILE"
 else
     echo "❌ No CSV file found!"
+    echo ""
     echo "Please download CSV from https://huggingface.co/spaces/mteb/leaderboard"
-    echo "Save it as 'mteb_data.csv' or in the 'stats/' directory"
+    echo "Recommended: Save in stats/ directory as 'hugging_face_stats_YYYY_MM_DD.csv'"
+    echo "Alternative: Save as 'mteb_data.csv' in current directory"
+    echo ""
+    echo "Date format example: hugging_face_stats_2025_07_28.csv (for July 28, 2025)"
     exit 1
 fi
-
-echo "📊 Found CSV file: $CSV_FILE"
 
 # Step 1: Analyze CSV with license & language scraping
 echo ""

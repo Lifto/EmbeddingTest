@@ -94,7 +94,7 @@ The **HuggingFace MTEB leaderboard** uses curated, validated evaluation results.
 1. **Download CSV**: Visit [https://huggingface.co/spaces/mteb/leaderboard](https://huggingface.co/spaces/mteb/leaderboard)
 2. **Apply Filters**: Set "Number of Parameters" to <100M 
 3. **Export Data**: Click "Download CSV" button
-4. **Save File**: Place CSV in directory `/stats` and rename to ex: `hugging_face_stats_2025_07_28.csv` with the date of the download.
+4. **Save File**: Place CSV in `/stats` directory with date format: `hugging_face_stats_YYYY_MM_DD.csv` (script will auto-select most recent)
 
 #### Analysis:
 ```bash
@@ -102,10 +102,12 @@ The **HuggingFace MTEB leaderboard** uses curated, validated evaluation results.
 pip install -r requirements.txt
 
 # Basic analysis (uses license info from CSV)
-python3 analyze_mteb_csv.py ./stats/hugging_face_stats_2025_07_28.csv
+python3 analyze_mteb_csv.py ./stats/hugging_face_stats_YYYY_MM_DD.csv
 
-# Enhanced analysis with license scraping (slower but more accurate)
-python3 analyze_mteb_csv.py ./stats/hugging_face_stats_2025_07_28.csv --scrape-licenses
+# Enhanced analysis with license scraping (slower but more accurate)  
+python3 analyze_mteb_csv.py ./stats/hugging_face_stats_YYYY_MM_DD.csv --scrape-licenses
+
+# Note: run_full_analysis.sh automatically finds the most recent dated CSV file
 ```
 
 #### License Verification
