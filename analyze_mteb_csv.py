@@ -12,17 +12,23 @@ HOW TO GET THE CSV:
 4. Save as 'mteb_data.csv' in this directory
 
 USAGE:
-    python3 analyze_mteb_csv.py [csv_file]
+    python3 analyze_mteb_csv.py [csv_file] [--scrape-licenses]
     
-    If no csv_file specified, looks for 'mteb_data.csv'
+    Arguments:
+        csv_file: Path to MTEB CSV file (default: looks for 'mteb_data.csv')
+        --scrape-licenses: Scrape licenses for top models until 3 redistributable found (optimized for speed)
 """
 
 import pandas as pd
 import logging
 import sys
+import re
+import requests
+import time
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from pathlib import Path
+from urllib.parse import urljoin
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -66,6 +72,93 @@ def calculate_rag_score(row: pd.Series) -> float:
     
     return round(rag_score, 2)
 
+# License scraping functionality
+LICENSE_CACHE = {}  # Cache to avoid duplicate requests
+
+def extract_model_url(model_str: str) -> Optional[str]:
+    """Extract HuggingFace URL from markdown-formatted model name"""
+    # Pattern: [model-name](https://huggingface.co/path)
+    match = re.search(r'\]\((https://huggingface\.co/[^)]+)\)', str(model_str))
+    return match.group(1) if match else None
+
+def scrape_license_from_hf(url: str) -> Optional[str]:
+    """Scrape license information from HuggingFace model page"""
+    
+    # Check cache first
+    if url in LICENSE_CACHE:
+        return LICENSE_CACHE[url]
+    
+    try:
+        logger.info(f"Scraping license from: {url}")
+        
+        # Add headers to appear as a regular browser
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        # Look for license in the HTML content
+        html_content = response.text.lower()
+        
+        # Common license patterns found on HuggingFace pages
+        license_patterns = {
+            'mit': ['mit license', 'mit'],
+            'apache-2.0': ['apache-2.0', 'apache 2.0', 'apache license 2.0'],
+            'bsd-3-clause': ['bsd-3-clause', 'bsd 3-clause'],
+            'cc-by-4.0': ['cc-by-4.0', 'creative commons attribution 4.0'],
+            'gpl-3.0': ['gpl-3.0', 'gnu general public license v3.0'],
+            'other': ['other']
+        }
+        
+        # Search for license mentions in the HTML
+        for license_type, patterns in license_patterns.items():
+            for pattern in patterns:
+                if pattern in html_content:
+                    LICENSE_CACHE[url] = license_type
+                    logger.info(f"Found license: {license_type}")
+                    time.sleep(1)  # Be respectful to HuggingFace servers
+                    return license_type
+        
+        # If no specific license found, try to find generic license mentions
+        if 'license' in html_content:
+            LICENSE_CACHE[url] = 'unknown'
+            logger.warning(f"License mentioned but not recognized for {url}")
+            time.sleep(1)
+            return 'unknown'
+        
+        LICENSE_CACHE[url] = None
+        logger.warning(f"No license information found for {url}")
+        time.sleep(1)
+        return None
+        
+    except requests.RequestException as e:
+        logger.error(f"Error scraping {url}: {e}")
+        LICENSE_CACHE[url] = None
+        time.sleep(2)  # Wait longer after errors
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error scraping {url}: {e}")
+        LICENSE_CACHE[url] = None
+        time.sleep(2)
+        return None
+
+def get_scraped_license_status(model_str: str, fallback_license: str = None) -> str:
+    """Get license status by scraping HuggingFace page, with fallback"""
+    
+    # Extract URL from model string
+    url = extract_model_url(model_str)
+    if not url:
+        return get_license_status(fallback_license)
+    
+    # Scrape license from HuggingFace page
+    scraped_license = scrape_license_from_hf(url)
+    
+    # Use scraped license if available, otherwise fall back
+    license_to_check = scraped_license if scraped_license else fallback_license
+    return get_license_status(license_to_check)
+
 def get_license_status(license_str) -> str:
     """Determine license status for redistribution"""
     if pd.isna(license_str) or license_str == '-' or not license_str:
@@ -89,7 +182,7 @@ def get_license_status(license_str) -> str:
     
     return "❓ Review Needed"
 
-def analyze_mteb_data(csv_file: str) -> pd.DataFrame:
+def analyze_mteb_data(csv_file: str, scrape_licenses: bool = False) -> pd.DataFrame:
     """Analyze MTEB data and create RAG-focused leaderboard"""
     
     logger.info(f"Loading MTEB data from {csv_file}")
@@ -110,10 +203,15 @@ def analyze_mteb_data(csv_file: str) -> pd.DataFrame:
     
     # Check if license column exists
     has_license_info = 'License' in df.columns
-    if not has_license_info:
+    if not has_license_info and not scrape_licenses:
         logger.warning("No license column found in CSV - license analysis will be limited")
+        logger.info("Use --scrape-licenses flag to fetch license info from HuggingFace pages")
+    elif scrape_licenses:
+        logger.info("🔍 License scraping enabled - will scrape top models until 3 redistributable licenses found")
+        logger.info("⚡ This optimized approach will be much faster!")
     
-    # Process each model
+    # First pass: Process all models without license scraping
+    logger.info("📊 First pass: Calculating RAG scores for all models...")
     processed_models = []
     skipped_count = 0
     
@@ -147,7 +245,6 @@ def analyze_mteb_data(csv_file: str) -> pd.DataFrame:
         
         # Calculate scores
         rag_score = calculate_rag_score(row)
-        license_status = get_license_status(row.get('License'))
         
         processed_models.append({
             # Basic info
@@ -157,9 +254,10 @@ def analyze_mteb_data(csv_file: str) -> pd.DataFrame:
             'Max_Tokens': int(max_tokens),
             'Embed_Dim': int(embed_dim) if embed_dim else 0,
             
-            # License info
+            # License info (will be updated in second pass if scraping)
             'License': row.get('License', 'Unknown'),
-            'License_Status': license_status,
+            'License_Status': 'Pending' if scrape_licenses else get_license_status(row.get('License')),
+            'License_Source': 'CSV Data',
             
             # Performance scores
             'RAG_Score': rag_score,
@@ -179,7 +277,41 @@ def analyze_mteb_data(csv_file: str) -> pd.DataFrame:
     
     # Create DataFrame and sort by RAG score
     result_df = pd.DataFrame(processed_models)
-    result_df = result_df.sort_values('RAG_Score', ascending=False)
+    result_df = result_df.sort_values('RAG_Score', ascending=False).reset_index(drop=True)
+    
+    # Second pass: Scrape licenses for top models if requested
+    if scrape_licenses:
+        logger.info("🎯 Second pass: Scraping licenses for top models until 3 redistributable found...")
+        
+        redistributable_found = 0
+        models_checked = 0
+        
+        for idx in range(len(result_df)):
+            if redistributable_found >= 3:
+                logger.info(f"✅ Found 3 redistributable licenses! Stopping scraping.")
+                break
+                
+            model_name = result_df.loc[idx, 'Model']
+            models_checked += 1
+            
+            print(f"🔍 [{models_checked}] Scraping license for {model_name}...")
+            license_status = get_scraped_license_status(model_name, result_df.loc[idx, 'License'])
+            
+            # Update the license information
+            result_df.loc[idx, 'License_Status'] = license_status
+            result_df.loc[idx, 'License_Source'] = 'Scraped from HF'
+            
+            # Check if this is redistributable
+            if license_status == "✅ Approved":
+                redistributable_found += 1
+                logger.info(f"🎉 Found redistributable model #{redistributable_found}: {model_name}")
+        
+        # Update remaining models to show they weren't scraped
+        for idx in range(models_checked, len(result_df)):
+            if result_df.loc[idx, 'License_Status'] == 'Pending':
+                result_df.loc[idx, 'License_Status'] = get_license_status(result_df.loc[idx, 'License'])
+        
+        logger.info(f"📈 License scraping summary: Checked {models_checked} models, found {redistributable_found} redistributable")
     
     return result_df
 
@@ -207,14 +339,15 @@ def generate_report(df: pd.DataFrame):
     
     # Top performers
     print(f"\n🏆 TOP 10 MODELS BY RAG SCORE:")
-    display_cols = ['Model', 'RAG_Score', 'Retrieval', 'STS', 'License_Status', 'Memory_MB']
+    display_cols = ['Model', 'RAG_Score', 'Retrieval', 'STS', 'License_Status', 'License_Source', 'Memory_MB']
     print(df[display_cols].head(10).to_string(index=False))
     
     # Check if we have license info
     approved_df = df[df['License_Status'] == '✅ Approved']
     if not approved_df.empty:
         print(f"\n✅ TOP 5 APPROVED LICENSE MODELS:")
-        print(approved_df[display_cols].head(5).to_string(index=False))
+        approved_display_cols = ['Model', 'RAG_Score', 'License', 'License_Source', 'Memory_MB']
+        print(approved_df[approved_display_cols].head(5).to_string(index=False))
         
         # Our recommendations
         print(f"\n🎯 FINAL RECOMMENDATIONS FOR RAG:")
@@ -256,6 +389,11 @@ def generate_report(df: pd.DataFrame):
 def main():
     """Main execution"""
     
+    # Parse command line arguments
+    scrape_licenses = '--scrape-licenses' in sys.argv
+    if scrape_licenses:
+        sys.argv.remove('--scrape-licenses')
+    
     # Determine CSV file
     if len(sys.argv) > 1:
         csv_file = sys.argv[1]
@@ -280,7 +418,7 @@ def main():
             return
     
     # Analyze data
-    df = analyze_mteb_data(csv_file)
+    df = analyze_mteb_data(csv_file, scrape_licenses=scrape_licenses)
     
     if df.empty:
         return
@@ -295,6 +433,13 @@ def main():
     generate_report(df)
     
     print(f"\n💾 Full results saved to: {output_file}")
+    
+    # Show license scraping summary if it was used
+    if scrape_licenses:
+        scraped_count = len([m for m in df['License_Source'] if m == 'Scraped from HF'])
+        print(f"\n🔍 License Scraping Summary:")
+        print(f"   Successfully scraped licenses for {scraped_count} models")
+        print(f"   License cache contains {len(LICENSE_CACHE)} entries")
 
 if __name__ == "__main__":
     main() 

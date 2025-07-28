@@ -101,9 +101,26 @@ The **HuggingFace MTEB leaderboard** uses curated, validated evaluation results.
 # Install dependencies
 pip install -r requirements.txt
 
-# Analyze downloaded CSV
-python3 analyze_mteb_csv.py mteb_data.csv
+# Basic analysis (uses license info from CSV)
+python3 analyze_mteb_csv.py ./stats/hugging_face_stats_2025_07_28.csv
+
+# Enhanced analysis with license scraping (slower but more accurate)
+python3 analyze_mteb_csv.py ./stats/hugging_face_stats_2025_07_28.csv --scrape-licenses
 ```
+
+#### License Verification
+
+The script includes two modes for license analysis:
+
+**Basic Mode** (default): Uses license information from the CSV file
+- ✅ **Fast**: No web requests required
+- ⚠️ **Limited**: Some CSV files may not contain license information
+
+**Enhanced Mode** (`--scrape-licenses` flag): Smart scraping for top models until 3 redistributable licenses found
+- ✅ **Fast & Smart**: Only scrapes top performers until finding 3 redistributable options
+- ✅ **Accurate**: Gets current license information directly from source
+- ✅ **Optimized**: Stops early rather than scraping all models
+- 📊 **Transparent**: Shows "License_Source" column indicating data origin
 
 ### Why This Approach Works Better
 
