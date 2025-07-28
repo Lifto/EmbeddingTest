@@ -130,6 +130,76 @@ The script includes two modes for license analysis:
 - ✅ **Performance**: Fast analysis without downloading entire MTEB database
 - ✅ **Reliability**: Trusted source for production model selection
 
+## Local Model Testing
+
+After identifying promising models, validate them on your actual hardware:
+
+### Prerequisites
+
+1. **Install Ollama**: Download from [https://ollama.ai/](https://ollama.ai/)
+2. **Install Dependencies**: `pip install -r requirements.txt`
+
+### Individual Model Testing
+
+Test a single model's performance:
+
+```bash
+# Test specific model
+python3 test_embedding_models.py intfloat/e5-small-v2
+
+# Test other top candidates
+python3 test_embedding_models.py avsolatorio/NoInstruct-small-Embedding-v0
+python3 test_embedding_models.py avsolatorio/GIST-small-Embedding-v0
+```
+
+**What it tests:**
+- ⏱️ **Download time**: How long to pull the model
+- 🚀 **Embedding speed**: Time per query (critical for RAG latency)
+- 💾 **Memory usage**: RAM increase during inference
+- 📏 **Vector dimensions**: Embedding size for accuracy assessment
+- 🧪 **Real queries**: Uses actual RHEL system administration questions
+
+### Batch Testing (Recommended)
+
+Test all top models automatically and get a comparison:
+
+```bash
+python3 test_all_models.py
+```
+
+**Features:**
+- 🏆 **Automated comparison**: Tests all 3 top models sequentially
+- 📊 **Performance ranking**: Sorts by speed and provides grades
+- 💡 **System requirements**: Analyzes hardware needs
+- 🎯 **Final recommendation**: Picks the best model for your system
+- 💾 **Detailed logs**: Saves complete results for later analysis
+
+**Expected Output:**
+```
+🏆 RECOMMENDED MODEL: intfloat/e5-small-v2
+   ⚡ Speed: 0.45s average per query
+   📏 Dimension: 384 (good for accuracy)
+   💾 Memory: 127MB increase during inference
+   🎯 Assessment: 🚀 EXCELLENT - Perfect for real-time RAG applications
+```
+
+### Complete Workflow (One-Click)
+
+Run the entire analysis and testing pipeline automatically:
+
+```bash
+./run_full_analysis.sh
+```
+
+**What it does:**
+1. 🔧 **Setup**: Creates virtual environment and installs dependencies
+2. 🔍 **Analysis**: Runs CSV analysis with license scraping  
+3. 🧪 **Testing**: Tests all top models locally with Ollama
+4. 📊 **Report**: Generates comprehensive comparison and recommendation
+5. 💾 **Documentation**: Saves all results for future reference
+
+This is the **recommended approach** for a complete evaluation workflow.
+
 ## Next Steps
 
 1. Performance testing with representative documents from target domain
