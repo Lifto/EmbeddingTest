@@ -91,6 +91,55 @@ def main():
         print("\n❌ No models found meeting all criteria!")
     
     print(f"\n🎯 Ready for Stage 2: Fetch scores for {len(acceptable_metas)} models")
+    
+    # Stage 2: Fetch DataFrame for acceptable models only
+    if acceptable_metas:
+        print(f"\n🔍 Stage 2: Fetching scores DataFrame...")
+        
+        # Get model names for filtering
+        acceptable_model_names = [meta.name for meta in acceptable_metas]
+        print(f"Looking for scores for these {len(acceptable_model_names)} models...")
+        
+        # Fetch results DataFrame for ONLY our acceptable models
+        print("Loading MTEB results for filtered models only...")
+        results = mteb.load_results(models=acceptable_model_names)
+        results_df = results.to_dataframe()
+        print(f"Filtered DataFrame shape: {results_df.shape} (tasks x models)")
+        
+        # Check which models actually have results
+        available_models = list(results_df.columns)
+        missing_models = [name for name in acceptable_model_names if name not in available_models]
+        
+        print(f"\n📊 MODEL AVAILABILITY:")
+        print(f"✅ Available in results: {len(available_models)}")
+        print(f"❌ Missing from results: {len(missing_models)}")
+        
+        if missing_models:
+            print(f"\n❌ Missing models:")
+            for model in missing_models:
+                print(f"   - {model}")
+        
+        if available_models:
+            # DataFrame already contains only our filtered models!
+            print(f"\n📋 RESULTS DATAFRAME:")
+            print(f"Shape: {results_df.shape} (tasks x models)")
+            print(f"Models: {list(results_df.columns)}")
+            print(f"Tasks (first 10): {list(results_df.index[:10])}")
+            
+            print(f"\n🔍 RAW DATAFRAME DATA:")
+            print("=" * 100)
+            print(results_df)
+            print("=" * 100)
+            
+            # Show some sample data
+            print(f"\n📋 SAMPLE SCORES:")
+            for model in available_models[:3]:  # Show first 3 models
+                print(f"\n{model}:")
+                model_scores = results_df[model].dropna()
+                for task, score in model_scores.head(10).items():
+                    print(f"   {task}: {score}")
+        else:
+            print("\n❌ No acceptable models found in results DataFrame!")
 
 if __name__ == "__main__":
     main() 
