@@ -295,16 +295,33 @@ def analyze_mteb_data(csv_file: str, scrape_licenses: bool = False) -> pd.DataFr
             models_checked += 1
             
             print(f"🔍 [{models_checked}] Scraping license for {model_name}...")
-            license_status = get_scraped_license_status(model_name, result_df.loc[idx, 'License'])
             
-            # Update the license information
-            result_df.loc[idx, 'License_Status'] = license_status
-            result_df.loc[idx, 'License_Source'] = 'Scraped from HF'
+            # Extract URL and scrape license
+            url = extract_model_url(model_name)
+            if url:
+                scraped_license = scrape_license_from_hf(url)
+                if scraped_license:
+                    # Update both the license value and status
+                    result_df.loc[idx, 'License'] = scraped_license
+                    result_df.loc[idx, 'License_Status'] = get_license_status(scraped_license)
+                    result_df.loc[idx, 'License_Source'] = 'Scraped from HF'
+                else:
+                    # Fallback to original license if scraping failed
+                    original_license = result_df.loc[idx, 'License']
+                    result_df.loc[idx, 'License_Status'] = get_license_status(original_license)
+                    result_df.loc[idx, 'License_Source'] = 'CSV Data (scrape failed)'
+            else:
+                # No URL found, use original license
+                original_license = result_df.loc[idx, 'License']
+                result_df.loc[idx, 'License_Status'] = get_license_status(original_license)
+                result_df.loc[idx, 'License_Source'] = 'CSV Data (no URL)'
             
             # Check if this is redistributable
-            if license_status == "✅ Approved":
+            current_license_status = result_df.loc[idx, 'License_Status']
+            if current_license_status == "✅ Approved":
                 redistributable_found += 1
-                logger.info(f"🎉 Found redistributable model #{redistributable_found}: {model_name}")
+                scraped_license_name = result_df.loc[idx, 'License']
+                logger.info(f"🎉 Found redistributable model #{redistributable_found}: {model_name} ({scraped_license_name})")
         
         # Update remaining models to show they weren't scraped
         for idx in range(models_checked, len(result_df)):
