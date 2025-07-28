@@ -146,12 +146,12 @@ After identifying promising models, validate them on your actual hardware:
 Test a single model's performance:
 
 ```bash
-# Test specific model
-python3 test_embedding_models.py intfloat/e5-small-v2
+# Test specific model (sentence-transformers compatible)
+python3 test_direct_embedding.py intfloat/e5-small-v2
 
-# Test other top candidates
-python3 test_embedding_models.py avsolatorio/NoInstruct-small-Embedding-v0
-python3 test_embedding_models.py avsolatorio/GIST-small-Embedding-v0
+# Test models that need transformers directly
+python3 test_transformers_direct.py avsolatorio/NoInstruct-small-Embedding-v0
+python3 test_direct_embedding.py avsolatorio/GIST-small-Embedding-v0
 ```
 
 **What it tests:**
@@ -166,7 +166,7 @@ python3 test_embedding_models.py avsolatorio/GIST-small-Embedding-v0
 Test all top models automatically and get a comparison:
 
 ```bash
-python3 test_all_models.py
+./run_full_analysis.sh
 ```
 
 **Features:**
